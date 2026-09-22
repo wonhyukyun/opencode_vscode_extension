@@ -1,0 +1,16 @@
+.github/**
+.vscode/**
+artifacts/**
+node_modules/**
+src/**
+webview/**
+test/**
+scripts/**
+.gitignore
+esbuild.mjs
+tsconfig.json
+package-lock.json
+PLAN.md
+**/*.map
+.omc/**
+.claude/**

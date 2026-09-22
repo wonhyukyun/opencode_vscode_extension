@@ -1,0 +1,141 @@
+{
+  "name": "opencode-integrated",
+  "displayName": "OpenCode Integrated",
+  "description": "A fully integrated OpenCode chat experience for Visual Studio Code. No separate CLI installation required.",
+  "version": "0.1.0",
+  "publisher": "local",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.94.0"
+  },
+  "categories": [
+    "AI",
+    "Other"
+  ],
+  "keywords": [
+    "opencode",
+    "ai",
+    "chat",
+    "coding agent"
+  ],
+  "extensionKind": [
+    "workspace"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onView:opencodeIntegrated.chat"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "opencodeIntegrated.open",
+        "title": "OpenCode: Open Chat",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "opencodeIntegrated.newChat",
+        "title": "OpenCode: New Chat",
+        "icon": "$(add)"
+      },
+      {
+        "command": "opencodeIntegrated.attachSelection",
+        "title": "OpenCode: Add Selection to Chat"
+      },
+      {
+        "command": "opencodeIntegrated.connectProvider",
+        "title": "OpenCode: Connect AI Provider"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "opencodeIntegrated",
+          "title": "OpenCode",
+          "icon": "media/opencode.svg"
+        }
+      ]
+    },
+    "views": {
+      "opencodeIntegrated": [
+        {
+          "type": "webview",
+          "id": "opencodeIntegrated.chat",
+          "name": "Chat"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "opencodeIntegrated.chat",
+        "contents": "OpenCode is loading..."
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "opencodeIntegrated.newChat",
+          "when": "view == opencodeIntegrated.chat",
+          "group": "navigation"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "opencodeIntegrated.attachSelection",
+          "when": "editorHasSelection",
+          "group": "opencode@1"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "opencodeIntegrated.open",
+        "key": "ctrl+escape",
+        "mac": "cmd+escape"
+      },
+      {
+        "command": "opencodeIntegrated.newChat",
+        "key": "ctrl+shift+escape",
+        "mac": "cmd+shift+escape"
+      }
+    ],
+    "configuration": {
+      "title": "OpenCode Integrated",
+      "properties": {
+        "opencodeIntegrated.binaryPath": {
+          "type": "string",
+          "default": "",
+          "description": "Optional OpenCode executable override for extension development. Leave empty to use the bundled engine."
+        },
+        "opencodeIntegrated.defaultModel": {
+          "type": "string",
+          "default": "",
+          "description": "Default model in provider/model form. Leave empty to use OpenCode's configured default."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "clean": "node scripts/clean.mjs",
+    "check-types": "tsc --noEmit",
+    "compile": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "test": "node scripts/test.mjs",
+    "smoke": "node scripts/smoke-server.mjs",
+    "prepare-binary": "node scripts/prepare-binary.mjs",
+    "package": "npm run check-types && npm test && npm run prepare-binary && node esbuild.mjs --production && node scripts/prepare-artifacts.mjs && vsce package --allow-missing-repository --target win32-x64 --out artifacts/opencode-integrated-win32-x64.vsix"
+  },
+  "dependencies": {
+    "dompurify": "^3.2.6",
+    "marked": "^15.0.12"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.30",
+    "@types/vscode": "^1.94.0",
+    "@vscode/vsce": "^3.6.0",
+    "esbuild": "^0.25.3",
+    "typescript": "^5.8.3"
+  },
+  "optionalDependencies": {
+    "opencode-windows-x64-baseline": "1.18.32"
+  }
+}

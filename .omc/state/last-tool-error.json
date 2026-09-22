@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"cd \\\"C:/Users/lignex1/Desktop/opencode_vscode_extension\\\" && npm run check-types && npm run compile 2>&1 | tail -3 && npm test 2>&1 | grep -E \\\"^# (pass|fail)\\\"\",\"timeout\":300000,\"descript...",
+  "error": "Exit code 2\n\n> opencode-integrated@0.1.0 check-types\n> tsc --noEmit\n\nwebview/main.ts(244,57): error TS2322: Type 'string | undefined' is not assignable to type 'string'.\r\n  Type 'undefined' is not assignable to type 'string'.\r\nwebview/main.ts(246,47): error TS2532: Object is possibly 'undefined'.\r\nwebview/main.ts(246,78): error TS2322: Type 'string | undefined' is not assignable to type 'string'.\r\n  Type 'undefined' is not assignable to type 'string'.\r\nwebview/main.ts(331,18): error TS2532: Obje...",
+  "timestamp": "2026-09-22T05:24:43.770Z",
+  "retry_count": 1
+}
