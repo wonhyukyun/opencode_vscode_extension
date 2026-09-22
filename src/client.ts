@@ -1,10 +1,11 @@
 import type {
+  AgentInfo,
+  PermissionRule,
   CommandInfo,
   MessageWithParts,
   OpenCodeEvent,
   PermissionRequest,
   PromptPart,
-  ProviderCatalogResponse,
   ProvidersResponse,
   QuestionRequest,
   SelectedModel,
@@ -26,6 +27,13 @@ export class OpenCodeClient {
     return this.request("/session", { method: "POST", body: "{}" })
   }
 
+  updateSessionPermission(sessionID: string, permission: PermissionRule[]): Promise<SessionInfo> {
+    return this.request(`/session/${encodeURIComponent(sessionID)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ permission }),
+    })
+  }
+
   deleteSession(sessionID: string): Promise<boolean> {
     return this.request(`/session/${encodeURIComponent(sessionID)}`, { method: "DELETE" })
   }
@@ -38,6 +46,7 @@ export class OpenCodeClient {
     const body: Record<string, unknown> = { parts }
     if (model) body.model = { providerID: model.providerID, modelID: model.modelID }
     if (model?.variant) body.variant = model.variant
+    if (model?.agent) body.agent = model.agent
     return this.request(`/session/${encodeURIComponent(sessionID)}/prompt_async`, {
       method: "POST",
       body: JSON.stringify(body),
@@ -48,10 +57,15 @@ export class OpenCodeClient {
     const body: Record<string, unknown> = { command, arguments: args }
     if (model) body.model = `${model.providerID}/${model.modelID}`
     if (model?.variant) body.variant = model.variant
+    if (model?.agent) body.agent = model.agent
     return this.request(`/session/${encodeURIComponent(sessionID)}/command`, {
       method: "POST",
       body: JSON.stringify(body),
     })
+  }
+
+  agents(): Promise<AgentInfo[]> {
+    return this.request("/agent")
   }
 
   commands(): Promise<CommandInfo[]> {
@@ -69,35 +83,6 @@ export class OpenCodeClient {
 
   providers(): Promise<ProvidersResponse> {
     return this.request("/config/providers")
-  }
-
-  providerCatalog(): Promise<ProviderCatalogResponse> {
-    return this.request("/provider")
-  }
-
-  providerAuthMethods(): Promise<Record<string, Array<{ type: "api" | "oauth"; label: string }>>> {
-    return this.request("/provider/auth")
-  }
-
-  setApiKey(providerID: string, key: string): Promise<boolean> {
-    return this.request(`/auth/${encodeURIComponent(providerID)}`, {
-      method: "PUT",
-      body: JSON.stringify({ type: "api", key }),
-    })
-  }
-
-  authorizeOAuth(providerID: string, method: number): Promise<{ url: string; method: "auto" | "code"; instructions: string }> {
-    return this.request(`/provider/${encodeURIComponent(providerID)}/oauth/authorize`, {
-      method: "POST",
-      body: JSON.stringify({ method, inputs: {} }),
-    })
-  }
-
-  finishOAuth(providerID: string, method: number, code?: string): Promise<boolean> {
-    return this.request(`/provider/${encodeURIComponent(providerID)}/oauth/callback`, {
-      method: "POST",
-      body: JSON.stringify({ method, code }),
-    })
   }
 
   permissions(): Promise<PermissionRequest[]> {

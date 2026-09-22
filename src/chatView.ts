@@ -2,7 +2,10 @@ import * as path from "node:path"
 import * as vscode from "vscode"
 import { OpenCodeClient } from "./client"
 import { OpenCodeServer } from "./server"
+import { PERMISSION_MODE_RULES } from "./types"
 import type {
+  AgentInfo,
+  PermissionMode,
   CommandInfo,
   ImageAttachment,
   EditorContext,
@@ -23,9 +26,9 @@ type WebviewMessage =
   | { type: "findFiles"; query: string; requestID: number }
   | { type: "questionReply"; requestID: string; answers: string[][] }
   | { type: "questionReject"; requestID: string }
+  | { type: "permissionMode"; mode: PermissionMode }
   | { type: "abort" }
   | { type: "permissionReply"; requestID: string; reply: "once" | "always" | "reject" }
-  | { type: "connectProvider" }
   | { type: "openLink"; href: string }
 
 export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disposable {
@@ -36,6 +39,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
   private activeSessionID: string | undefined
   private eventController: AbortController | undefined
   private initialization: Promise<void> | undefined
+  private permissionMode: PermissionMode = "manual"
   private refreshTimer: NodeJS.Timeout | undefined
   private forceContext = false
 
@@ -83,58 +87,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     this.post({ type: "context", context: this.editorContext(), enabled: this.forceContext })
   }
 
-  async connectProvider(): Promise<void> {
-    try {
-      const client = await this.ensureClient()
-      const [catalog, methods] = await Promise.all([client.providerCatalog(), client.providerAuthMethods()])
-      const choices = catalog.all
-        .filter((provider) => !catalog.connected.includes(provider.id))
-        .map((provider) => ({ label: provider.name, description: provider.id, provider }))
-        .sort((a, b) => a.label.localeCompare(b.label))
-      const selected = await vscode.window.showQuickPick(choices, {
-        title: "Connect an AI provider",
-        placeHolder: "Choose a provider",
-        matchOnDescription: true,
-      })
-      if (!selected) return
-
-      const available = methods[selected.provider.id] ?? [{ type: "api" as const, label: "API key" }]
-      const method = await vscode.window.showQuickPick(
-        available.map((item, index) => ({ label: item.label, description: item.type, item, index })),
-        { title: `Connect ${selected.provider.name}` },
-      )
-      if (!method) return
-
-      if (method.item.type === "api") {
-        const key = await vscode.window.showInputBox({
-          title: `${selected.provider.name} API key`,
-          prompt: "The key is sent only to the local OpenCode engine and is never exposed to the webview.",
-          password: true,
-          ignoreFocusOut: true,
-        })
-        if (!key) return
-        await client.setApiKey(selected.provider.id, key)
-      } else {
-        const authorization = await client.authorizeOAuth(selected.provider.id, method.index)
-        await vscode.env.openExternal(vscode.Uri.parse(authorization.url))
-        let code: string | undefined
-        if (authorization.method === "code") {
-          code = await vscode.window.showInputBox({
-            title: `Finish ${selected.provider.name} sign-in`,
-            prompt: authorization.instructions || "Paste the authorization code from your browser.",
-            ignoreFocusOut: true,
-          })
-          if (!code) return
-        }
-        await client.finishOAuth(selected.provider.id, method.index, code)
-      }
-      vscode.window.showInformationMessage(`${selected.provider.name} connected to OpenCode.`)
-      await this.refreshProviders()
-    } catch (error) {
-      this.reportError(error)
-    }
-  }
-
   dispose(): void {
     this.eventController?.abort()
     if (this.refreshTimer) clearTimeout(this.refreshTimer)
@@ -164,6 +116,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
         case "questionReply":
           await this.replyQuestion(message.requestID, message.answers)
           return
+        case "permissionMode":
+          await this.setPermissionMode(message.mode)
+          return
         case "questionReject":
           await this.replyQuestion(message.requestID)
           return
@@ -181,9 +136,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
         case "permissionReply":
           await (await this.ensureClient()).replyPermission(message.requestID, message.reply)
           this.post({ type: "permissionResolved", requestID: message.requestID })
-          return
-        case "connectProvider":
-          await this.connectProvider()
           return
         case "openLink":
           if (/^https?:\/\//i.test(message.href)) await vscode.env.openExternal(vscode.Uri.parse(message.href))
@@ -205,14 +157,16 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
   private async initializeOnce(): Promise<void> {
     this.post({ type: "status", status: "starting", message: "Starting bundled OpenCode engine…" })
     const client = await this.ensureClient()
-    const [sessions, providers, permissions, questions, commands] = await Promise.all([
+    const [sessions, providers, permissions, questions, commands, agents] = await Promise.all([
       client.listSessions(),
       client.providers(),
       client.permissions(),
       client.questions(),
       client.commands().catch((): CommandInfo[] => []),
+      client.agents().catch((): AgentInfo[] => []),
     ])
     const remembered = this.context.workspaceState.get<string>("activeSessionID")
+    this.permissionMode = this.context.workspaceState.get<PermissionMode>("permissionMode") ?? "manual"
     const session = sessions.find((item) => item.id === remembered) ?? sessions[0]
     this.activeSessionID = session?.id
     const messages = session ? await client.getMessages(session.id) : []
@@ -225,7 +179,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       permissions: permissions.filter((item) => item.sessionID === this.activeSessionID),
       context: this.editorContext(),
       commands,
+      agents,
+      permissionMode: this.permissionMode,
     })
+    if (this.activeSessionID) await this.applyPermissionMode(this.activeSessionID)
     for (const question of questions) {
       if (question.sessionID === this.activeSessionID) this.handleQuestion(question)
     }
@@ -248,6 +205,22 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     await this.context.workspaceState.update("activeSessionID", sessionID)
     const messages = await client.getMessages(sessionID)
     this.post({ type: "sessionSelected", sessionID, messages })
+    await this.applyPermissionMode(sessionID)
+  }
+
+  private async setPermissionMode(mode: PermissionMode): Promise<void> {
+    this.permissionMode = mode
+    await this.context.workspaceState.update("permissionMode", mode)
+    if (this.activeSessionID) await this.applyPermissionMode(this.activeSessionID)
+  }
+
+  private async applyPermissionMode(sessionID: string): Promise<void> {
+    try {
+      const client = await this.ensureClient()
+      await client.updateSessionPermission(sessionID, PERMISSION_MODE_RULES[this.permissionMode])
+    } catch (error) {
+      this.reportError(error)
+    }
   }
 
   private async deleteSession(sessionID: string): Promise<void> {
@@ -268,6 +241,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       await this.context.workspaceState.update("activeSessionID", session.id)
       await this.refreshSessions()
       this.post({ type: "sessionSelected", sessionID: session.id, messages: [] })
+      await this.applyPermissionMode(session.id)
     }
     return this.activeSessionID!
   }
@@ -406,11 +380,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       else this.post({ type: "sessionSelected", messages: [] })
     }
     this.post({ type: "sessions", sessions, activeSessionID: this.activeSessionID })
-  }
-
-  private async refreshProviders(): Promise<void> {
-    const providers = await (await this.ensureClient()).providers()
-    this.post({ type: "providers", providers })
   }
 
   private reportError(error: unknown): void {

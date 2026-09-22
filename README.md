@@ -7,7 +7,7 @@ OpenCode Integrated is a terminal-free VS Code client for OpenCode. It packages 
 Install the VSIX that matches the VS Code extension host. The current build target is Windows x64:
 
 ```powershell
-code --install-extension artifacts/opencode-integrated-win32-x64.vsix
+code --install-extension artifacts/opencode-integrated-0.1.0-win32-x64.vsix
 ```
 
 You do not need to install `opencode` separately. After installation, open a folder and select the OpenCode icon in the activity bar.
@@ -17,7 +17,7 @@ You do not need to install `opencode` separately. After installation, open a fol
 - `Ctrl+Esc` opens the OpenCode sidebar.
 - `Ctrl+Shift+Esc` starts a new chat.
 - **OpenCode: Add Selection to Chat** attaches the selected editor text.
-- **Connect provider** uses VS Code's password input or browser OAuth flow. Credentials remain in the extension host and OpenCode's own credential store; they are never sent to the webview.
+- Models come from your OpenCode configuration (`opencode.json` and OpenCode's credential store). Configure providers with the OpenCode CLI or config file; the extension does not manage credentials.
 - Tool permissions appear above the composer and can be allowed once, always allowed, or denied.
 
 ## Development

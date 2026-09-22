@@ -34,6 +34,7 @@ export interface ModelInfo {
   name: string
   variants?: Record<string, unknown>
   capabilities?: { attachment?: boolean; toolcall?: boolean }
+  limit?: { context: number; input?: number; output: number }
 }
 
 export interface ProviderInfo {
@@ -44,12 +45,6 @@ export interface ProviderInfo {
 
 export interface ProvidersResponse {
   providers: ProviderInfo[]
-  default: Record<string, string>
-}
-
-export interface ProviderCatalogResponse {
-  all: ProviderInfo[]
-  connected: string[]
   default: Record<string, string>
 }
 
@@ -109,6 +104,37 @@ export type PromptPart =
       }
     }
 
+export type PermissionMode = "manual" | "acceptEdits" | "plan" | "auto"
+
+export interface PermissionRule {
+  permission: string
+  pattern: string
+  action: "allow" | "deny" | "ask"
+}
+
+export const PERMISSION_MODE_RULES: Record<PermissionMode, PermissionRule[]> = {
+  // Follow the agent / config defaults: edits and shell commands ask.
+  manual: [],
+  // File edits are applied without asking; everything else keeps its default.
+  acceptEdits: [{ permission: "edit", pattern: "*", action: "allow" }],
+  // Read-only: no file edits, shell commands still need confirmation.
+  plan: [
+    { permission: "edit", pattern: "*", action: "deny" },
+    { permission: "bash", pattern: "*", action: "ask" },
+  ],
+  // Everything is allowed without prompting.
+  auto: [{ permission: "*", pattern: "*", action: "allow" }],
+}
+
+export interface AgentInfo {
+  name: string
+  description?: string
+  mode: "subagent" | "primary" | "all"
+  hidden?: boolean
+  native?: boolean
+  color?: string
+}
+
 export interface CommandInfo {
   name: string
   description?: string
@@ -128,4 +154,5 @@ export interface SelectedModel {
   providerID: string
   modelID: string
   variant?: string
+  agent?: string
 }

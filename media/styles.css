@@ -15,7 +15,7 @@ button { cursor: pointer; }
 
 #app { display: grid; grid-template-rows: auto auto auto minmax(0, 1fr) auto auto; }
 .topbar { display: flex; gap: 4px; padding: 8px; border-bottom: 1px solid var(--vscode-sideBar-border, transparent); }
-.session-select, .model-select, .variant-select {
+.session-select, .model-select, .variant-select, .agent-select, .mode-select {
   min-width: 0; border: 1px solid transparent; border-radius: 4px; outline: none;
   background: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground);
 }
@@ -23,7 +23,13 @@ button { cursor: pointer; }
 .model-select { max-width: 55%; padding: 3px 5px; font-size: 11px; }
 .variant-select { max-width: 30%; padding: 3px 5px; font-size: 11px; }
 .variant-select[hidden] { display: none; }
-.session-select:focus, .model-select:focus, .variant-select:focus, textarea:focus { border-color: var(--vscode-focusBorder); }
+.agent-select { max-width: 28%; padding: 3px 5px; font-size: 11px; font-weight: 600; }
+.agent-select[hidden] { display: none; }
+.mode-select { max-width: 28%; padding: 3px 5px; font-size: 11px; font-weight: 600; }
+.mode-select[data-mode="acceptEdits"] { color: var(--vscode-charts-blue, var(--vscode-textLink-foreground)); }
+.mode-select[data-mode="plan"] { color: var(--vscode-charts-green, var(--vscode-testing-iconPassed)); }
+.mode-select[data-mode="auto"] { color: var(--vscode-charts-orange, var(--vscode-notificationsWarningIcon-foreground)); }
+.session-select:focus, .model-select:focus, .variant-select:focus, .agent-select:focus, .mode-select:focus, textarea:focus { border-color: var(--vscode-focusBorder); }
 .icon-button { width: 28px; border: 0; border-radius: 4px; background: transparent; font-size: 17px; }
 .icon-button:hover { background: var(--vscode-toolbar-hoverBackground); }
 .icon-button:disabled { opacity: .35; cursor: default; }
@@ -118,11 +124,15 @@ textarea::placeholder { color: var(--vscode-input-placeholderForeground); }
 .composer-footer { display: flex; align-items: center; gap: 6px; min-height: 25px; padding-top: 5px; }
 .link-button { padding: 2px 0; border: 0; background: transparent; color: var(--vscode-textLink-foreground); font-size: 11px; white-space: nowrap; }
 .link-button:hover { text-decoration: underline; }
+.tokens { margin-left: auto; color: var(--vscode-descriptionForeground); font-size: 10px; white-space: nowrap; cursor: default; }
+.tokens.warn { color: var(--vscode-notificationsWarningIcon-foreground); }
+.tokens[hidden] { display: none; }
+.tokens + .status { margin-left: 0; }
 .status { margin-left: auto; color: var(--vscode-descriptionForeground); font-size: 10px; white-space: nowrap; }
 
 @media (max-width: 260px) {
   .message.user { margin-left: 8px; }
   .permission-actions button { flex: 1; }
   .composer-footer { flex-wrap: wrap; }
-  .model-select, .variant-select { max-width: 100%; width: 100%; }
+  .model-select, .variant-select, .agent-select, .mode-select { max-width: 100%; width: 100%; }
 }

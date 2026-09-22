@@ -15,7 +15,6 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("opencodeIntegrated.open", () => chat.reveal()),
     vscode.commands.registerCommand("opencodeIntegrated.newChat", () => chat.newChat()),
     vscode.commands.registerCommand("opencodeIntegrated.attachSelection", () => chat.attachSelection()),
-    vscode.commands.registerCommand("opencodeIntegrated.connectProvider", () => chat.connectProvider()),
     vscode.window.onDidChangeActiveTextEditor(() => chat.notifyEditorContext()),
     vscode.window.onDidChangeTextEditorSelection(() => chat.notifyEditorContext()),
   )

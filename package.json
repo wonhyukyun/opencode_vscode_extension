@@ -40,10 +40,6 @@
       {
         "command": "opencodeIntegrated.attachSelection",
         "title": "OpenCode: Add Selection to Chat"
-      },
-      {
-        "command": "opencodeIntegrated.connectProvider",
-        "title": "OpenCode: Connect AI Provider"
       }
     ],
     "viewsContainers": {
@@ -122,7 +118,7 @@
     "test": "node scripts/test.mjs",
     "smoke": "node scripts/smoke-server.mjs",
     "prepare-binary": "node scripts/prepare-binary.mjs",
-    "package": "npm run check-types && npm test && npm run prepare-binary && node esbuild.mjs --production && node scripts/prepare-artifacts.mjs && vsce package --allow-missing-repository --target win32-x64 --out artifacts/opencode-integrated-win32-x64.vsix"
+    "package": "npm run check-types && npm test && npm run prepare-binary && node esbuild.mjs --production && node scripts/package-vsix.mjs --target=win32-x64"
   },
   "dependencies": {
     "dompurify": "^3.2.6",

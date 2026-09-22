@@ -4,3 +4,28 @@ bin/
 artifacts/
 *.vsix
 *.log
+
+# OMC / agent session state
+.omc/
+.claude/
+
+# Editor and OS files
+.vscode-test/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Build and test leftovers
+*.tsbuildinfo
+*.map
+coverage/
+.eslintcache
+.npm/
+.cache/
+tmp/
+temp/
+
+# Local environment
+.env
+.env.*

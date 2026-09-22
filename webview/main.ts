@@ -2,6 +2,8 @@ import DOMPurify from "dompurify"
 import { marked } from "marked"
 import { applyOpenCodeEvent, type EventState } from "../src/eventReducer"
 import type {
+  AgentInfo,
+  PermissionMode,
   CommandInfo,
   EditorContext,
   MessagePart,
@@ -20,7 +22,7 @@ declare function acquireVsCodeApi<T = unknown>(): {
   setState(state: T): void
 }
 
-const vscode = acquireVsCodeApi<{ selectedModel?: string; selectedVariant?: string }>()
+const vscode = acquireVsCodeApi<{ selectedModel?: string; selectedVariant?: string; selectedAgent?: string }>()
 
 interface ViewState extends EventState {
   sessions: SessionInfo[]
@@ -32,6 +34,8 @@ interface ViewState extends EventState {
   contextEnabled: boolean
   images: ImageAttachment[]
   commands: CommandInfo[]
+  agents: AgentInfo[]
+  permissionMode: PermissionMode
   phase: "starting" | "ready"
 }
 
@@ -55,6 +59,8 @@ const state: ViewState = {
   contextEnabled: true,
   images: [],
   commands: [],
+  agents: [],
+  permissionMode: "manual",
   busy: false,
   phase: "starting",
 }
@@ -82,11 +88,18 @@ app.innerHTML = `
       <button id="stop" class="stop-button hidden" title="Stop" aria-label="Stop">■</button>
     </div>
     <div class="composer-footer">
+      <select id="permission-mode" class="mode-select" aria-label="Permission mode" title="Permission mode">
+        <option value="manual">Manual</option>
+        <option value="acceptEdits">Edit automatically</option>
+        <option value="plan">Plan</option>
+        <option value="auto">Auto</option>
+      </select>
+      <select id="agents" class="agent-select" aria-label="Agent" hidden></select>
       <select id="models" class="model-select" aria-label="AI model"></select>
       <select id="variants" class="variant-select" aria-label="Thinking effort" hidden></select>
       <button id="attach-image" class="link-button hidden" type="button" title="Attach image">Image</button>
       <input id="image-input" type="file" accept="image/*" multiple hidden>
-      <button id="connect" class="link-button">Connect provider</button>
+      <span id="tokens" class="tokens" hidden></span>
       <span id="status" class="status"></span>
     </div>
   </footer>`
@@ -95,6 +108,14 @@ const messagesElement = element("messages")
 const sessionsElement = element<HTMLSelectElement>("sessions")
 const modelsElement = element<HTMLSelectElement>("models")
 const variantsElement = element<HTMLSelectElement>("variants")
+const agentsElement = element<HTMLSelectElement>("agents")
+const permissionModeElement = element<HTMLSelectElement>("permission-mode")
+const PERMISSION_MODE_HINTS: Record<PermissionMode, string> = {
+  manual: "Manual: ask before edits and shell commands",
+  acceptEdits: "Edit automatically: apply file edits without asking",
+  plan: "Plan: read-only, no file edits",
+  auto: "Auto: allow everything without asking",
+}
 const promptElement = element<HTMLTextAreaElement>("prompt")
 const attachImageElement = element<HTMLButtonElement>("attach-image")
 const imageInputElement = element<HTMLInputElement>("image-input")
@@ -110,7 +131,6 @@ element("delete-chat").addEventListener("click", () => {
     vscode.postMessage({ type: "deleteSession", sessionID: state.activeSessionID })
   }
 })
-element("connect").addEventListener("click", () => vscode.postMessage({ type: "connectProvider" }))
 element("send").addEventListener("click", send)
 element("stop").addEventListener("click", () => vscode.postMessage({ type: "abort" }))
 contextElement.addEventListener("click", () => {
@@ -126,6 +146,14 @@ modelsElement.addEventListener("change", () => {
 })
 variantsElement.addEventListener("change", () => {
   vscode.setState({ ...vscode.getState(), selectedVariant: variantsElement.value })
+})
+permissionModeElement.addEventListener("change", () => {
+  state.permissionMode = permissionModeElement.value as PermissionMode
+  renderPermissionMode()
+  vscode.postMessage({ type: "permissionMode", mode: state.permissionMode })
+})
+agentsElement.addEventListener("change", () => {
+  vscode.setState({ ...vscode.getState(), selectedAgent: agentsElement.value })
 })
 promptElement.addEventListener("input", resizePrompt)
 attachImageElement.addEventListener("click", () => imageInputElement.click())
@@ -374,6 +402,10 @@ window.addEventListener("message", ({ data }) => {
       state.phase = "ready"
       state.sessions = data.sessions
       state.commands = data.commands ?? []
+      state.agents = data.agents ?? []
+      state.permissionMode = data.permissionMode ?? "manual"
+      renderAgents()
+      renderPermissionMode()
       state.activeSessionID = data.activeSessionID
       state.messages = data.messages
       state.providers = data.providers
@@ -463,7 +495,8 @@ function send(): void {
   closeSuggestions()
   const [providerID, modelID] = modelsElement.value.split("\u0000")
   const variant = variantsElement.hidden ? "" : variantsElement.value
-  const model = providerID && modelID ? { providerID, modelID, variant: variant || undefined } : undefined
+  const agent = agentsElement.hidden ? "" : agentsElement.value
+  const model = providerID && modelID ? { providerID, modelID, variant: variant || undefined, agent: agent || undefined } : undefined
   const slash = /^\/(\S+)\s*([\s\S]*)$/.exec(text)
   if (slash) {
     vscode.postMessage({ type: "command", command: slash[1] ?? "", arguments: (slash[2] ?? "").trim(), model })
@@ -518,7 +551,7 @@ function renderModels(): void {
       options.push(modelOption(provider.name, model))
     }
   }
-  modelsElement.innerHTML = options.length ? options.join("") : '<option value="">No connected model</option>'
+  modelsElement.innerHTML = options.length ? options.join("") : '<option value="">No model configured in opencode.json</option>'
   if (previous && Array.from(modelsElement.options).some((option) => option.value === previous)) {
     modelsElement.value = previous
   } else {
@@ -548,6 +581,31 @@ function renderVariants(): void {
     .join("")
   variantsElement.value = variants.includes(previous) ? previous : ""
   variantsElement.hidden = false
+}
+
+function renderPermissionMode(): void {
+  permissionModeElement.value = state.permissionMode
+  permissionModeElement.title = PERMISSION_MODE_HINTS[state.permissionMode]
+  permissionModeElement.dataset.mode = state.permissionMode
+}
+
+function renderAgents(): void {
+  const agents = state.agents.filter((agent) => agent.mode !== "subagent" && !agent.hidden)
+  if (!agents.length) {
+    agentsElement.hidden = true
+    agentsElement.innerHTML = ""
+    return
+  }
+  const previous = agentsElement.value || vscode.getState()?.selectedAgent || ""
+  agentsElement.innerHTML = agents
+    .map(
+      (agent) =>
+        `<option value="${escapeAttribute(agent.name)}" title="${escapeAttribute(agent.description ?? "")}">${escapeHtml(agent.name)}</option>`,
+    )
+    .join("")
+  const names = agents.map((agent) => agent.name)
+  agentsElement.value = names.includes(previous) ? previous : names.includes("build") ? "build" : names[0] ?? ""
+  agentsElement.hidden = false
 }
 
 function renderAttachmentControls(): void {
@@ -625,6 +683,7 @@ messagesElement.addEventListener(
 )
 
 function renderMessages(): void {
+  renderTokens()
   if (!state.messages.length) {
     messagesElement.innerHTML = `
       <div class="empty-state">
@@ -648,6 +707,7 @@ function renderMessages(): void {
   }
   messagesElement.innerHTML = state.messages.map(renderMessage).join("")
   if (follow.enabled) scrollToBottom()
+  renderTokens()
 }
 
 function renderMessage(message: MessageWithParts): string {
@@ -825,6 +885,61 @@ function renderQuestionCard(request: QuestionRequest): string {
 
 function renderNotices(): void {
   element("notices").innerHTML = state.error ? `<div class="error-notice">${escapeHtml(state.error)}</div>` : ""
+}
+
+interface TokenUsage {
+  input: number
+  output: number
+  reasoning: number
+  cache: { read: number; write: number }
+}
+
+function formatTokens(value: number): string {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(value >= 10_000_000 ? 0 : 1)}M`
+  if (value >= 1_000) return `${(value / 1_000).toFixed(value >= 100_000 ? 0 : 1)}K`
+  return String(value)
+}
+
+function findModel(providerID?: string, modelID?: string): ModelInfo | undefined {
+  if (!providerID || !modelID) return undefined
+  return (state.providers?.providers ?? []).find((item) => item.id === providerID)?.models[modelID]
+}
+
+function renderTokens(): void {
+  const tokensElement = element("tokens")
+  const last = [...state.messages].reverse().find((message) => message.info.role === "assistant" && message.info.tokens)
+  const usage = last?.info.tokens as TokenUsage | undefined
+  if (!usage) {
+    tokensElement.hidden = true
+    tokensElement.textContent = ""
+    return
+  }
+  const context = usage.input + usage.output + usage.reasoning + usage.cache.read + usage.cache.write
+  let sessionTotal = 0
+  for (const message of state.messages) {
+    const tokens = message.info.tokens as TokenUsage | undefined
+    if (message.info.role !== "assistant" || !tokens) continue
+    sessionTotal += tokens.input + tokens.output + tokens.reasoning + tokens.cache.read + tokens.cache.write
+  }
+  const model = findModel(String(last?.info.providerID ?? ""), String(last?.info.modelID ?? "")) ?? selectedModelInfo()
+  const limit = model?.limit?.context
+  let text = `Context ${formatTokens(context)}`
+  let title = `Current context: ${context.toLocaleString()} tokens
+Session total: ${sessionTotal.toLocaleString()} tokens`
+  if (limit) {
+    const remaining = Math.max(limit - context, 0)
+    const percent = Math.min(Math.round((context / limit) * 100), 100)
+    text = `Context ${formatTokens(context)} / ${formatTokens(limit)} (${percent}%) · ${formatTokens(remaining)} left`
+    title += `
+Context window: ${limit.toLocaleString()} tokens
+Remaining: ${remaining.toLocaleString()} tokens`
+    tokensElement.classList.toggle("warn", percent >= 80)
+  } else {
+    tokensElement.classList.remove("warn")
+  }
+  tokensElement.textContent = text
+  tokensElement.title = title
+  tokensElement.hidden = false
 }
 
 function renderBusy(message?: string): void {
