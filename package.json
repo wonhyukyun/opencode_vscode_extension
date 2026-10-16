@@ -2,7 +2,7 @@
   "name": "opencode-integrated",
   "displayName": "OpenCode Integrated",
   "description": "A fully integrated OpenCode chat experience for Visual Studio Code. No separate CLI installation required.",
-  "version": "0.3.4",
+  "version": "0.4.0",
   "publisher": "local",
   "license": "MIT",
   "engines": {
