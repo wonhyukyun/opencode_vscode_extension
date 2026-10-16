@@ -39,9 +39,26 @@ try {
   }
   const created = await json("/session", { method: "POST", headers, body: "{}" })
   if (!created.id) throw new Error("Session creation did not return an id")
+  const [questions, permissions, statuses] = await Promise.all([
+    json("/question", { headers }), json("/permission", { headers }), json("/session/status", { headers }),
+  ])
+  if (!Array.isArray(questions) || !Array.isArray(permissions) || typeof statuses !== "object" || statuses === null) {
+    throw new Error("Pending interaction snapshot returned an unexpected shape")
+  }
   const sessions = await json("/session?scope=project&roots=true&limit=5", { headers })
   if (!Array.isArray(sessions) || !sessions.some((session) => session.id === created.id)) {
     throw new Error("Created session was not returned by the project session API")
+  }
+  const [skills, mcp] = await Promise.all([json("/skill", { headers }), json("/mcp", { headers })])
+  if (!Array.isArray(skills) || !skills.every((skill) => typeof skill.name === "string" && typeof skill.location === "string")) {
+    throw new Error("The skill API returned an unexpected shape")
+  }
+  if (typeof mcp !== "object" || mcp === null || Array.isArray(mcp)) {
+    throw new Error("The MCP status API returned an unexpected shape")
+  }
+  const global = await json("/experimental/session?roots=true&limit=5", { headers })
+  if (!Array.isArray(global) || !global.some((session) => session.id === created.id)) {
+    throw new Error("Created session was not returned by the cross-project session API")
   }
   await json(`/session/${encodeURIComponent(created.id)}`, { method: "DELETE", headers })
   console.log(`Smoke test passed with bundled engine ${created.version ?? "unknown version"}`)

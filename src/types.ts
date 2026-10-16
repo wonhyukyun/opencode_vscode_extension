@@ -1,9 +1,56 @@
 export interface SessionInfo {
   id: string
+  /** Set on sessions the engine spawned for a subagent (task tool) call. */
+  parentID?: string
   title: string
   directory: string
   model?: { id: string; providerID: string; variant?: string }
   time: { created: number; updated: number; archived?: number }
+}
+
+/** A skill the engine has loaded and can offer to the agent. */
+export interface SkillInfo {
+  name: string
+  description?: string
+  /** Absolute path to the SKILL.md file, or `<built-in>` for skills compiled into the engine. */
+  location: string
+  content?: string
+}
+
+export type McpState = "connected" | "disabled" | "needs_auth" | "needs_client_registration" | "failed"
+
+/** Status of one configured MCP server, keyed by server name in the engine response. */
+export interface McpStatus {
+  status: McpState | string
+  error?: string
+  [key: string]: unknown
+}
+
+export interface McpServerInfo {
+  name: string
+  status: McpState | string
+  error?: string
+}
+
+export interface ProjectSummary {
+  id: string
+  name?: string
+  worktree: string
+}
+
+/** A session as returned by the cross-project session listing. */
+export interface GlobalSessionInfo extends SessionInfo {
+  project?: ProjectSummary | null
+}
+
+/** Sessions belonging to one repository, ready for display in the history tree. */
+export interface HistoryGroup {
+  key: string
+  name: string
+  path: string
+  current: boolean
+  updated: number
+  sessions: GlobalSessionInfo[]
 }
 
 export interface MessageInfo {
@@ -112,18 +159,37 @@ export interface PermissionRule {
   action: "allow" | "deny" | "ask"
 }
 
+// The engine appends session rules on every update and the last matching rule wins, so each
+// mode must restate every permission it cares about (including "*") to override earlier modes.
+function rules(edit: "allow" | "deny" | "ask", bash: "allow" | "ask", webfetch: "allow" | "ask"): PermissionRule[] {
+  const list: PermissionRule[] = [
+    { permission: "*", pattern: "*", action: "allow" },
+    { permission: "edit", pattern: "*", action: edit },
+    { permission: "bash", pattern: "*", action: bash },
+    { permission: "webfetch", pattern: "*", action: webfetch },
+    { permission: "doom_loop", pattern: "*", action: "ask" },
+  ]
+  if (edit !== "allow" || bash !== "allow") {
+    list.push(
+      { permission: "read", pattern: "*.env", action: "ask" },
+      { permission: "read", pattern: "*.env.*", action: "ask" },
+      { permission: "read", pattern: "*.env.example", action: "allow" },
+    )
+  }
+  return list
+}
+
 export const PERMISSION_MODE_RULES: Record<PermissionMode, PermissionRule[]> = {
-  // Follow the agent / config defaults: edits and shell commands ask.
-  manual: [],
-  // File edits are applied without asking; everything else keeps its default.
-  acceptEdits: [{ permission: "edit", pattern: "*", action: "allow" }],
-  // Read-only: no file edits, shell commands still need confirmation.
-  plan: [
-    { permission: "edit", pattern: "*", action: "deny" },
-    { permission: "bash", pattern: "*", action: "ask" },
-  ],
-  // Everything is allowed without prompting.
-  auto: [{ permission: "*", pattern: "*", action: "allow" }],
+  // Ask before file edits, shell commands and web fetches.
+  manual: rules("ask", "ask", "ask"),
+  // File edits are applied without asking; shell commands and web fetches still ask.
+  acceptEdits: rules("allow", "ask", "ask"),
+  // Read-only: file edits are denied, shell commands still need confirmation.
+  plan: rules("deny", "ask", "allow"),
+  // Everything is allowed without prompting. Some requests ignore session rules (doom_loop is
+  // evaluated against the agent's rules only, subagent sessions don't inherit these), so the
+  // extension also answers any request that still reaches it while this mode is active.
+  auto: [{ permission: "*", pattern: "*", action: "allow" }, ...rules("allow", "allow", "allow")],
 }
 
 export interface AgentInfo {
@@ -155,4 +221,9 @@ export interface SelectedModel {
   modelID: string
   variant?: string
   agent?: string
+}
+
+export interface AgentModelPreference {
+  model: string
+  variant: string
 }

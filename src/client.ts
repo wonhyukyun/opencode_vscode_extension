@@ -2,6 +2,9 @@ import type {
   AgentInfo,
   PermissionRule,
   CommandInfo,
+  GlobalSessionInfo,
+  McpStatus,
+  SkillInfo,
   MessageWithParts,
   OpenCodeEvent,
   PermissionRequest,
@@ -19,12 +22,31 @@ export class OpenCodeClient {
     private readonly authorization?: string,
   ) {}
 
-  listSessions(): Promise<SessionInfo[]> {
-    return this.request("/session?scope=project&roots=true&limit=50")
+  listSessions(limit = 50): Promise<SessionInfo[]> {
+    return this.request(`/session?scope=project&roots=true&limit=${limit}`)
+  }
+
+  /** Lists root sessions across every project so history can be grouped by repository. */
+  listGlobalSessions(limit = 50): Promise<GlobalSessionInfo[]> {
+    return this.request(`/experimental/session?roots=true&limit=${limit}`)
+  }
+
+  /** Skills the engine has loaded for this workspace, including built-ins. */
+  listSkills(): Promise<SkillInfo[]> {
+    return this.request("/skill")
+  }
+
+  /** Status of every configured MCP server, keyed by server name. */
+  mcpStatus(): Promise<Record<string, McpStatus>> {
+    return this.request("/mcp")
   }
 
   createSession(): Promise<SessionInfo> {
     return this.request("/session", { method: "POST", body: "{}" })
+  }
+
+  getSession(sessionID: string): Promise<SessionInfo> {
+    return this.request(`/session/${encodeURIComponent(sessionID)}`)
   }
 
   updateSessionPermission(sessionID: string, permission: PermissionRule[]): Promise<SessionInfo> {
@@ -100,6 +122,10 @@ export class OpenCodeClient {
     return this.request("/question")
   }
 
+  sessionStatuses(): Promise<Record<string, { type: string }>> {
+    return this.request("/session/status")
+  }
+
   replyQuestion(requestID: string, answers: string[][]): Promise<boolean> {
     return this.request(`/question/${encodeURIComponent(requestID)}/reply`, {
       method: "POST",
@@ -111,7 +137,7 @@ export class OpenCodeClient {
     return this.request(`/question/${encodeURIComponent(requestID)}/reject`, { method: "POST" })
   }
 
-  async subscribe(onEvent: (event: OpenCodeEvent) => void, signal: AbortSignal): Promise<void> {
+  async subscribe(onEvent: (event: OpenCodeEvent) => void, signal: AbortSignal, onConnected?: () => Promise<void>): Promise<void> {
     while (!signal.aborted) {
       try {
         const response = await fetch(`${this.baseUrl}/event`, {
@@ -119,11 +145,24 @@ export class OpenCodeClient {
           signal,
         })
         if (!response.ok || !response.body) throw new Error(`Event stream failed with HTTP ${response.status}`)
-        await parseEventStream(response.body, onEvent, signal)
+        try {
+          await onConnected?.()
+          onEvent({ type: "client.connected", properties: {} })
+          await parseEventStream(response.body, onEvent, signal)
+        } finally {
+          await response.body.cancel().catch(() => {})
+        }
       } catch (error) {
         if (signal.aborted) return
-        await new Promise((resolve) => setTimeout(resolve, 750))
       }
+      if (signal.aborted) return
+      onEvent({ type: "client.disconnected", properties: {} })
+      await new Promise<void>((resolve) => {
+        const finish = () => { clearTimeout(timer); signal.removeEventListener("abort", finish); resolve() }
+        const timer = setTimeout(finish, 750)
+        signal.addEventListener("abort", finish, { once: true })
+        if (signal.aborted) finish()
+      })
     }
   }
 

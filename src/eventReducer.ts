@@ -45,7 +45,7 @@ export function applyOpenCodeEvent(state: EventState, event: OpenCodeEvent): Eve
       return { ...state, messages: [...state.messages] }
     }
     case "session.status":
-      return { ...state, busy: properties.status?.type === "busy" }
+      return { ...state, busy: ["busy", "retry"].includes(properties.status?.type) }
     case "session.idle":
       return { ...state, busy: false }
     case "session.error":

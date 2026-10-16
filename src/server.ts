@@ -84,6 +84,14 @@ export class OpenCodeServer implements vscode.Disposable {
     }
   }
 
+  get isRunning(): boolean {
+    return Boolean(this.baseUrlValue && this.child && !this.child.killed)
+  }
+
+  log(text: string): void {
+    this.output.appendLine(text)
+  }
+
   showLogs(): void {
     this.output.show(true)
   }

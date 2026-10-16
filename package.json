@@ -2,11 +2,11 @@
   "name": "opencode-integrated",
   "displayName": "OpenCode Integrated",
   "description": "A fully integrated OpenCode chat experience for Visual Studio Code. No separate CLI installation required.",
-  "version": "0.1.0",
+  "version": "0.3.4",
   "publisher": "local",
   "license": "MIT",
   "engines": {
-    "vscode": "^1.94.0"
+    "vscode": "^1.106.0"
   },
   "categories": [
     "AI",
@@ -23,7 +23,10 @@
   ],
   "main": "./dist/extension.js",
   "activationEvents": [
-    "onView:opencodeIntegrated.chat"
+    "onView:opencodeIntegrated.rightChat",
+    "onView:opencodeIntegrated.history",
+    "onView:opencodeIntegrated.skills",
+    "onView:opencodeIntegrated.mcp"
   ],
   "contributes": {
     "commands": [
@@ -33,6 +36,11 @@
         "icon": "$(comment-discussion)"
       },
       {
+        "command": "opencodeIntegrated.openSidebar",
+        "title": "OpenCode: Open Chat in Sidebar",
+        "icon": "$(layout-sidebar)"
+      },
+      {
         "command": "opencodeIntegrated.newChat",
         "title": "OpenCode: New Chat",
         "icon": "$(add)"
@@ -40,6 +48,59 @@
       {
         "command": "opencodeIntegrated.attachSelection",
         "title": "OpenCode: Add Selection to Chat"
+      },
+      {
+        "command": "opencodeIntegrated.showHistory",
+        "title": "OpenCode: Show Chat History",
+        "icon": "$(history)"
+      },
+      {
+        "command": "opencodeIntegrated.dumpDebug",
+        "title": "OpenCode: Dump Debug Log",
+        "icon": "$(bug)"
+      },
+      {
+        "command": "opencodeIntegrated.searchHistory",
+        "title": "OpenCode: Search Chat History",
+        "icon": "$(search)"
+      },
+      {
+        "command": "opencodeIntegrated.refreshHistory",
+        "title": "OpenCode: Refresh Chat History",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "opencodeIntegrated.loadOlderHistory",
+        "title": "OpenCode: Load Older Chats",
+        "icon": "$(history)"
+      },
+      {
+        "command": "opencodeIntegrated.startHistorySelection",
+        "title": "OpenCode: Select Chats",
+        "icon": "$(checklist)",
+        "enablement": "!opencodeIntegrated.historyDeleting"
+      },
+      {
+        "command": "opencodeIntegrated.cancelHistorySelection",
+        "title": "OpenCode: Cancel Selection",
+        "icon": "$(close)",
+        "enablement": "!opencodeIntegrated.historyDeleting"
+      },
+      {
+        "command": "opencodeIntegrated.deleteSelectedHistory",
+        "title": "OpenCode: Delete Selected Chats",
+        "icon": "$(trash)",
+        "enablement": "opencodeIntegrated.historyHasSelection && !opencodeIntegrated.historyDeleting"
+      },
+      {
+        "command": "opencodeIntegrated.refreshSkills",
+        "title": "OpenCode: Refresh Skills",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "opencodeIntegrated.refreshMcp",
+        "title": "OpenCode: Refresh MCP Servers",
+        "icon": "$(refresh)"
       }
     ],
     "viewsContainers": {
@@ -49,29 +110,102 @@
           "title": "OpenCode",
           "icon": "media/opencode.svg"
         }
+      ],
+      "secondarySidebar": [
+        {
+          "id": "opencodeIntegratedChat",
+          "title": "OpenCode Chat",
+          "icon": "media/opencode.svg"
+        }
       ]
     },
     "views": {
       "opencodeIntegrated": [
         {
+          "id": "opencodeIntegrated.history",
+          "name": "History"
+        },
+        {
+          "id": "opencodeIntegrated.skills",
+          "name": "Skills"
+        },
+        {
+          "id": "opencodeIntegrated.mcp",
+          "name": "MCP Servers"
+        }
+      ],
+      "opencodeIntegratedChat": [
+        {
           "type": "webview",
-          "id": "opencodeIntegrated.chat",
+          "id": "opencodeIntegrated.rightChat",
           "name": "Chat"
         }
       ]
     },
     "viewsWelcome": [
       {
-        "view": "opencodeIntegrated.chat",
-        "contents": "OpenCode is loading..."
+        "view": "opencodeIntegrated.history",
+        "contents": "[New chat](command:opencodeIntegrated.newChat)"
       }
     ],
     "menus": {
+      "editor/title": [
+        {
+          "command": "opencodeIntegrated.open",
+          "when": "resourceScheme == file",
+          "group": "navigation"
+        }
+      ],
       "view/title": [
         {
           "command": "opencodeIntegrated.newChat",
-          "when": "view == opencodeIntegrated.chat",
-          "group": "navigation"
+          "when": "view == opencodeIntegrated.history",
+          "group": "navigation@1"
+        },
+        {
+          "command": "opencodeIntegrated.searchHistory",
+          "when": "view == opencodeIntegrated.history",
+          "group": "navigation@2"
+        },
+        {
+          "command": "opencodeIntegrated.refreshHistory",
+          "when": "view == opencodeIntegrated.history",
+          "group": "navigation@3"
+        },
+        {
+          "command": "opencodeIntegrated.showHistory",
+          "when": "view == opencodeIntegrated.rightChat",
+          "group": "navigation@1"
+        },
+        {
+          "command": "opencodeIntegrated.dumpDebug",
+          "when": "view == opencodeIntegrated.rightChat",
+          "group": "navigation@9"
+        },
+        {
+          "command": "opencodeIntegrated.startHistorySelection",
+          "when": "view == opencodeIntegrated.history && !opencodeIntegrated.historySelecting",
+          "group": "navigation@4"
+        },
+        {
+          "command": "opencodeIntegrated.deleteSelectedHistory",
+          "when": "view == opencodeIntegrated.history && opencodeIntegrated.historySelecting",
+          "group": "navigation@4"
+        },
+        {
+          "command": "opencodeIntegrated.cancelHistorySelection",
+          "when": "view == opencodeIntegrated.history && opencodeIntegrated.historySelecting",
+          "group": "navigation@5"
+        },
+        {
+          "command": "opencodeIntegrated.refreshSkills",
+          "when": "view == opencodeIntegrated.skills",
+          "group": "navigation@1"
+        },
+        {
+          "command": "opencodeIntegrated.refreshMcp",
+          "when": "view == opencodeIntegrated.mcp",
+          "group": "navigation@1"
         }
       ],
       "editor/context": [
@@ -105,7 +239,7 @@
         "opencodeIntegrated.defaultModel": {
           "type": "string",
           "default": "",
-          "description": "Default model in provider/model form. Leave empty to use OpenCode's configured default."
+          "description": "Model to preselect, in provider/model form (for example anthropic/claude-sonnet-4-5). Used when no model has been chosen yet for the selected agent. Editing this applies it right away. Leave empty to use the default OpenCode reports."
         }
       }
     }
@@ -129,6 +263,7 @@
     "@types/vscode": "^1.94.0",
     "@vscode/vsce": "^3.6.0",
     "esbuild": "^0.25.3",
+    "parse5": "^7.3.0",
     "typescript": "^5.8.3"
   },
   "optionalDependencies": {
