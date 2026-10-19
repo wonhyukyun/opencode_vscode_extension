@@ -5,6 +5,7 @@ import { summarizeTokens } from "../src/tokens"
 import { findModel, formatContextWindow, resolveContextWindow, type ModelRef, type ResolvedContextWindow } from "../src/contextWindow"
 import { questionAnswers, type QuestionDraft } from "../src/questionState"
 import { isKnownCommand } from "../src/loadedResources"
+import { queuedMessageIDs, runningSubagents } from "../src/queue"
 import { formatModelValue, normalizeModelValue, parseModelValue, resolveConfiguredDefault } from "../src/modelRef"
 import type {
   AgentInfo,
@@ -596,7 +597,9 @@ function send(): void {
     return
   }
   if (!connected) return
-  if ((!text && !state.images.length) || state.busy) return
+  // While a reply (or a delegated subagent) is running, a prompt is queued: the engine picks it up
+  // when the current step finishes.
+  if (!text && !state.images.length) return
   closeSuggestions()
   const { providerID, modelID } = parseModelValue(modelsElement.value)
   const variant = variantsElement.hidden ? "" : variantsElement.value
@@ -607,6 +610,11 @@ function send(): void {
     const name = slash[1] ?? ""
     // The engine answers an unknown command with HTTP 500, so only forward names it knows.
     if (!handleLocalCommand(name)) {
+      if (state.busy) {
+        state.error = `/${name} can run after the current reply finishes. Plain messages can be queued now.`
+        renderNotices()
+        return
+      }
       if (!isKnownCommand(name, state.commands)) {
         state.error = `Unknown command /${name}. Type / to see the commands this workspace has.`
         renderNotices()
@@ -884,12 +892,13 @@ function renderMessages(): void {
     })
     return
   }
-  messagesElement.innerHTML = state.messages.map(renderMessage).join("")
+  const queued = queuedMessageIDs(state.messages, state.busy)
+  messagesElement.innerHTML = state.messages.map((message) => renderMessage(message, queued.has(message.info.id))).join("")
   if (follow.enabled) scrollToBottom()
   renderTokens()
 }
 
-function renderMessage(message: MessageWithParts): string {
+function renderMessage(message: MessageWithParts, queued = false): string {
   const role = message.info.role
   const content = message.parts.map((part) => renderPart(part, role)).join("")
   const plainText = message.parts
@@ -897,7 +906,9 @@ function renderMessage(message: MessageWithParts): string {
     .map((part) => String(part.text ?? ""))
     .join("\n")
   return `<article class="message ${role}">
-    <div class="message-header"><span>${role === "user" ? "You" : "OpenCode"}</span>${messageModelBadge(message)}${
+    <div class="message-header"><span>${role === "user" ? "You" : "OpenCode"}</span>${
+      queued ? '<span class="message-queued" title="Sent while OpenCode was working. It runs when the current step finishes.">Queued</span>' : ""
+    }${messageModelBadge(message)}${
       plainText ? `<button class="copy-button" data-copy="${encodeURIComponent(plainText)}">Copy</button>` : ""
     }</div>
     <div class="message-body">${content || '<span class="thinking">Thinking…</span>'}</div>
@@ -1249,11 +1260,17 @@ function describeWindow(window: ResolvedContextWindow): string {
 
 function renderBusy(message?: string): void {
   const waiting = state.questions.length > 0
-  element("send").classList.toggle("hidden", state.busy || waiting)
+  const subagents = state.busy ? runningSubagents(state.messages) : 0
+  element("send").classList.toggle("hidden", waiting)
+  element("send").title = state.busy ? "Queue message (Enter)" : "Send (Enter)"
   element("stop").classList.toggle("hidden", !state.busy && !waiting)
   element("status").textContent = !connected ? "Reconnecting... Your answers are saved."
-    : waiting ? `Waiting for your answer (${state.questions.length})` : message ?? (state.busy ? "Working…" : "")
-  promptElement.placeholder = waiting ? "Answer the question above to continue" : "Ask OpenCode (@ file, / command)"
+    : waiting ? `Waiting for your answer (${state.questions.length})`
+    : message ?? (subagents ? `Subagent working (${subagents})…` : state.busy ? "Working…" : "")
+  promptElement.placeholder = waiting ? "Answer the question above to continue"
+    : subagents ? "Subagent is working. Type to queue a message for the main agent"
+    : state.busy ? "Type to queue a message (runs after the current step)"
+    : "Ask OpenCode (@ file, / command)"
   element<HTMLButtonElement>("send").disabled = !connected
   promptElement.disabled = state.phase === "starting"
 }

@@ -55,6 +55,7 @@ button { cursor: pointer; }
 .message.user { margin-left: 22px; padding: 9px 11px; border-radius: 8px; background: var(--vscode-input-background); }
 .message-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; color: var(--vscode-descriptionForeground); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
 .message-model { margin-left: auto; margin-right: 8px; font-weight: 500; text-transform: none; letter-spacing: 0; opacity: .75; }
+.message-queued { margin-left: 8px; margin-right: auto; padding: 0 6px; border-radius: 8px; font-weight: 500; text-transform: none; letter-spacing: 0; background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }
 .copy-button { opacity: 0; border: 0; background: transparent; color: var(--vscode-textLink-foreground); font-size: 10px; }
 .message:hover .copy-button { opacity: 1; }
 .message-body { line-height: 1.5; overflow-wrap: anywhere; }

@@ -84,6 +84,32 @@ export class HistoryViewProvider implements vscode.TreeDataProvider<vscode.TreeI
     }
   }
 
+  /** Deletes the one chat behind a tree row, after the same confirmation as bulk delete. */
+  async deleteItem(item: vscode.TreeItem | undefined): Promise<void> {
+    if (!item?.id || item instanceof RepositoryItem || this.deleting) return
+    const title = typeof item.label === "string" ? item.label : item.label?.label ?? "New chat"
+    const answer = await vscode.window.showWarningMessage(
+      `Delete "${title}"?`,
+      { modal: true, detail: "This conversation cannot be recovered." },
+      "Delete",
+    )
+    if (answer !== "Delete") return
+    this.deleting = true
+    await this.updateSelectionContext()
+    try {
+      const result = await this.chat.deleteHistorySessions([item.id])
+      if (result.failed.length) {
+        void vscode.window.showErrorMessage(`Could not delete "${title}": ${result.failed[0]?.message}`)
+      }
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Could not delete chat: ${error instanceof Error ? error.message : String(error)}`)
+    } finally {
+      this.deleting = false
+      await this.updateSelectionContext()
+      this.refresh()
+    }
+  }
+
   private async updateSelectionContext(): Promise<void> {
     await Promise.all([
       vscode.commands.executeCommand("setContext", "opencodeIntegrated.historySelecting", this.selectionMode),
@@ -140,6 +166,7 @@ export class HistoryViewProvider implements vscode.TreeDataProvider<vscode.TreeI
     if (this.selectionMode) {
       item.checkboxState = this.selected.has(session.id) ? vscode.TreeItemCheckboxState.Checked : vscode.TreeItemCheckboxState.Unchecked
     } else {
+      item.contextValue = "opencodeSession"
       item.command = { command: "opencodeIntegrated.selectHistory", title: "Open chat", arguments: [session.id] }
     }
     return item

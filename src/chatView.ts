@@ -6,7 +6,8 @@ import { QuestionResponder } from "./questionResponder"
 import { SessionLineage } from "./sessionLineage"
 import { deleteHistory, type HistoryDeleteResult } from "./deleteHistory"
 import { groupSessionsByRepository } from "./historyGroups"
-import { PERMISSION_MODE_RULES } from "./types"
+import { loadLatestMessages } from "./messageLoader"
+import { MINI_SWE_AGENT, sessionPermissionRules } from "./harness"
 import type {
   AgentInfo,
   AgentModelPreference,
@@ -17,6 +18,7 @@ import type {
   GlobalSessionInfo,
   HistoryGroup,
   McpStatus,
+  MessageWithParts,
   SkillInfo,
   OpenCodeEvent,
   PermissionRequest,
@@ -80,7 +82,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
   private eventController: AbortController | undefined
   private initialization: Promise<void> | undefined
   private permissionMode: PermissionMode = "manual"
-  private readonly appliedPermissionMode = new Map<string, PermissionMode>()
+  /** Rules last applied per session, as `mode` or `mode+harness`. */
+  private readonly appliedPermissionMode = new Map<string, string>()
+  /** Agent of the latest prompt; the Mini-SWE-V2 harness needs its own session rules. */
+  private agent: string | undefined
   private refreshTimer: NodeJS.Timeout | undefined
   private forceContext = false
   private sessionLimit = 50
@@ -343,7 +348,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     const session = sessions.find((item) => item.id === remembered) ?? sessions[0]
     this.activeSessionID = session?.id
     this.sessionsChanged.fire()
-    const messages = session ? await client.getMessages(session.id) : []
+    const loaded = session ? await this.loadMessages(client, session.id) : { messages: [] }
+    const messages = loaded.messages
     this.post({
       type: "initialize",
       sessions,
@@ -361,7 +367,22 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       defaultModel: configuredDefaultModel(),
     })
     this.post({ type: "context", context: this.editorContext(), enabled: this.forceContext })
+    if (loaded.notice) this.post({ type: "error", message: loaded.notice })
     if (this.activeSessionID) await this.applyPermissionMode(this.activeSessionID)
+  }
+
+  /**
+   * Loads a chat's latest messages, falling back to fewer when the engine cannot send them all, so
+   * one oversized chat cannot block startup or New chat. `notice` explains anything left out.
+   */
+  private async loadMessages(client: OpenCodeClient, sessionID: string): Promise<{ messages: MessageWithParts[]; notice?: string }> {
+    const result = await loadLatestMessages((limit) => client.getMessages(sessionID, limit))
+    if (!result.error) return { messages: result.messages }
+    this.server.log(`Loading messages for ${sessionID} failed: ${result.error}`)
+    const notice = result.limit
+      ? `This chat is too large to load in full. Showing only the latest ${result.limit} messages.`
+      : `Could not load this chat's messages: ${result.error}. You can still start a new chat or delete this one from History.`
+    return { messages: result.messages, notice }
   }
 
   private async ensureClient(): Promise<OpenCodeClient> {
@@ -385,19 +406,20 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
   private async selectSession(sessionID: string): Promise<void> {
     const generation = ++this.selectionGeneration
     const client = await this.ensureClient()
-    const [messages, permissions, questions, statuses] = await Promise.all([
-      client.getMessages(sessionID), client.permissions(), client.questions(), client.sessionStatuses(),
+    const [loaded, permissions, questions, statuses] = await Promise.all([
+      this.loadMessages(client, sessionID), client.permissions(), client.questions(), client.sessionStatuses(),
     ])
     const pending = await this.pendingPermissions(permissions, sessionID)
     if (generation !== this.selectionGeneration) return
     this.activeSessionID = sessionID
     await this.context.workspaceState.update("activeSessionID", sessionID)
     this.post({
-      type: "sessionSelected", sessionID, messages,
+      type: "sessionSelected", sessionID, messages: loaded.messages,
       permissions: pending,
       questions: questions.filter((item) => item.sessionID === sessionID),
       busy: ["busy", "retry"].includes(statuses[sessionID]?.type ?? ""),
     })
+    if (loaded.notice) this.post({ type: "error", message: loaded.notice })
     await this.applyPermissionMode(sessionID)
     this.sessionsChanged.fire()
   }
@@ -448,11 +470,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
   }
 
   private async applyPermissionMode(sessionID: string): Promise<void> {
-    if (this.appliedPermissionMode.get(sessionID) === this.permissionMode) return
+    const key = this.agent === MINI_SWE_AGENT ? `${this.permissionMode}+harness` : this.permissionMode
+    if (this.appliedPermissionMode.get(sessionID) === key) return
     try {
       const client = await this.ensureClient()
-      await client.updateSessionPermission(sessionID, PERMISSION_MODE_RULES[this.permissionMode])
-      this.appliedPermissionMode.set(sessionID, this.permissionMode)
+      await client.updateSessionPermission(sessionID, sessionPermissionRules(this.permissionMode, this.agent))
+      this.appliedPermissionMode.set(sessionID, key)
     } catch (error) {
       this.reportError(error)
     }
@@ -529,6 +552,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       return
     }
     const sessionID = await this.ensureSession()
+    this.agent = model?.agent
+    await this.applyPermissionMode(sessionID)
     this.post({ type: "status", status: "busy" })
     await client.sendCommand(sessionID, name, args, model)
   }
@@ -549,7 +574,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     const trimmed = text.trim()
     if (!trimmed && !images.length && !files.length) return
     const client = await this.ensureClient()
-    await this.ensureSession()
+    const sessionID = await this.ensureSession()
+    this.agent = model?.agent
+    await this.applyPermissionMode(sessionID)
     const parts: PromptPart[] = trimmed ? [{ type: "text", text: trimmed }] : []
     for (const file of new Set(files)) parts.push(this.mentionPart(file))
     for (const image of images) {
@@ -562,7 +589,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     }
     this.forceContext = false
     this.post({ type: "status", status: "busy" })
-    await client.sendPrompt(this.activeSessionID!, parts, model)
+    await client.sendPrompt(sessionID, parts, model)
   }
 
   private contextPart(context: EditorContext): PromptPart {

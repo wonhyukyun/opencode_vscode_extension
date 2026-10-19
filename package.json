@@ -2,7 +2,7 @@
   "name": "opencode-integrated",
   "displayName": "OpenCode Integrated",
   "description": "A fully integrated OpenCode chat experience for Visual Studio Code. No separate CLI installation required.",
-  "version": "0.4.0",
+  "version": "0.4.3",
   "publisher": "local",
   "license": "MIT",
   "engines": {
@@ -101,6 +101,12 @@
         "command": "opencodeIntegrated.refreshMcp",
         "title": "OpenCode: Refresh MCP Servers",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "opencodeIntegrated.deleteHistoryItem",
+        "title": "Delete Chat",
+        "icon": "$(trash)",
+        "enablement": "!opencodeIntegrated.historyDeleting"
       }
     ],
     "viewsContainers": {
@@ -208,6 +214,24 @@
           "group": "navigation@1"
         }
       ],
+      "view/item/context": [
+        {
+          "command": "opencodeIntegrated.deleteHistoryItem",
+          "when": "view == opencodeIntegrated.history && viewItem == opencodeSession",
+          "group": "inline"
+        },
+        {
+          "command": "opencodeIntegrated.deleteHistoryItem",
+          "when": "view == opencodeIntegrated.history && viewItem == opencodeSession",
+          "group": "9_delete"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "opencodeIntegrated.deleteHistoryItem",
+          "when": "false"
+        }
+      ],
       "editor/context": [
         {
           "command": "opencodeIntegrated.attachSelection",
@@ -240,6 +264,34 @@
           "type": "string",
           "default": "",
           "description": "Model to preselect, in provider/model form (for example anthropic/claude-sonnet-4-5). Used when no model has been chosen yet for the selected agent. Editing this applies it right away. Leave empty to use the default OpenCode reports."
+        },
+        "opencodeIntegrated.harness.miniSweV2.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Register the Mini-SWE-V2 harness as the mini-swe-v2 agent: the shell is its only tool, it runs one command per step, and each command runs in a fresh process. Pick it in the agent menu or let another agent delegate to it. Takes effect after reloading the window."
+        },
+        "opencodeIntegrated.harness.miniSweV2.shell": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "bash",
+            "powershell",
+            "pwsh"
+          ],
+          "enumDescriptions": [
+            "Use the shell the engine picks (on Windows: PowerShell 7, then Windows PowerShell, then Git Bash) and write the harness prompt for it. Other agents are not affected.",
+            "bash (Git Bash on Windows). Also becomes the engine's shell for every agent.",
+            "Windows PowerShell 5.1. Also becomes the engine's shell for every agent.",
+            "PowerShell 7+ (pwsh). Also becomes the engine's shell for every agent."
+          ],
+          "default": "auto",
+          "markdownDescription": "Shell the `mini-swe-v2` agent runs its commands in; the harness prompt switches to that shell's syntax. The engine has one shell for all agents, so any value other than `auto` also changes the shell the other agents' bash tool uses. If the chosen shell is not installed the engine falls back to its default and the prompt follows. Takes effect after reloading the window."
+        },
+        "opencodeIntegrated.harness.miniSweV2.stepLimit": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "Maximum steps the mini-swe-v2 agent may take per prompt. 0 means no limit. Takes effect after reloading the window."
         }
       }
     }

@@ -60,8 +60,8 @@ export class OpenCodeClient {
     return this.request(`/session/${encodeURIComponent(sessionID)}`, { method: "DELETE" })
   }
 
-  getMessages(sessionID: string): Promise<MessageWithParts[]> {
-    return this.request(`/session/${encodeURIComponent(sessionID)}/message?limit=200`)
+  getMessages(sessionID: string, limit = 200): Promise<MessageWithParts[]> {
+    return this.request(`/session/${encodeURIComponent(sessionID)}/message?limit=${limit}`)
   }
 
   sendPrompt(sessionID: string, parts: PromptPart[], model?: SelectedModel): Promise<void> {
@@ -179,7 +179,10 @@ export class OpenCodeClient {
         const parsed = JSON.parse(text) as { message?: string; data?: { message?: string } }
         detail = parsed.data?.message ?? parsed.message ?? text
       } catch {}
-      throw new Error(detail || `OpenCode API returned HTTP ${response.status}`)
+      // Name the request: engine faults such as Bun's "RangeError: Out of memory" otherwise read
+      // as if VS Code itself had failed.
+      const route = `${init.method ?? "GET"} ${path.split("?")[0]} → HTTP ${response.status}`
+      throw new Error(detail ? `OpenCode engine error: ${detail} (${route})` : `OpenCode API returned ${route}`)
     }
     if (!text) return true as T
     return JSON.parse(text) as T

@@ -43,12 +43,21 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("opencodeIntegrated.startHistorySelection", () => history.setSelectionMode(true)),
     vscode.commands.registerCommand("opencodeIntegrated.cancelHistorySelection", () => history.setSelectionMode(false)),
     vscode.commands.registerCommand("opencodeIntegrated.deleteSelectedHistory", () => history.deleteSelected()),
+    vscode.commands.registerCommand("opencodeIntegrated.deleteHistoryItem", (item?: vscode.TreeItem) => history.deleteItem(item)),
     vscode.commands.registerCommand("opencodeIntegrated.loadOlderHistory", () => chat.loadOlderHistory()),
     vscode.commands.registerCommand("opencodeIntegrated.selectHistory", (sessionID: string) => chat.openSession(sessionID)),
     vscode.commands.registerCommand("opencodeIntegrated.attachSelection", () => chat.attachSelection()),
     vscode.commands.registerCommand("opencodeIntegrated.dumpDebug", () => chat.dumpDebug()),
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (event.affectsConfiguration("opencodeIntegrated.defaultModel")) chat.notifyDefaultModel()
+      // The engine reads agent definitions only when it starts.
+      if (event.affectsConfiguration("opencodeIntegrated.harness") && server.isRunning) {
+        void vscode.window
+          .showInformationMessage("OpenCode: Reload the window to apply the Mini-SWE-V2 harness settings.", "Reload Window")
+          .then((action) => {
+            if (action === "Reload Window") void vscode.commands.executeCommand("workbench.action.reloadWindow")
+          })
+      }
     }),
     vscode.window.onDidChangeActiveTextEditor(() => chat.notifyEditorContext()),
     vscode.window.onDidChangeTextEditorSelection(() => chat.notifyEditorContext()),

@@ -1,8 +1,11 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process"
 import { randomBytes } from "node:crypto"
+import * as fs from "node:fs"
 import * as net from "node:net"
+import * as path from "node:path"
 import * as vscode from "vscode"
 import { resolveBundledBinary } from "./binary"
+import { engineConfigContent, type HarnessShellSetting } from "./harness"
 
 const START_TIMEOUT_MS = 20_000
 
@@ -44,8 +47,26 @@ export class OpenCodeServer implements vscode.Disposable {
     const baseUrl = `http://127.0.0.1:${port}`
     const password = randomBytes(32).toString("base64url")
     const authorization = `Basic ${Buffer.from(`opencode:${password}`).toString("base64")}`
+    const settings = vscode.workspace.getConfiguration("opencodeIntegrated")
+    const shellSetting = settings.get<HarnessShellSetting>("harness.miniSweV2.shell", "auto")
+    const engineConfig = engineConfigContent(
+      process.env.OPENCODE_CONFIG_CONTENT,
+      {
+        enabled: settings.get<boolean>("harness.miniSweV2.enabled", true),
+        stepLimit: settings.get<number>("harness.miniSweV2.stepLimit", 0),
+        shell: shellSetting,
+      },
+      { platform: process.platform, shellEnv: process.env.SHELL, find: onPath },
+    )
+    const configContent = engineConfig.content
 
     this.output.appendLine(`Starting bundled OpenCode engine (${binary})`)
+    if (engineConfig.shell) {
+      this.output.appendLine(`Mini-SWE-V2 harness registered for ${engineConfig.shell}`)
+      if (shellSetting !== "auto" && shellSetting !== engineConfig.shell) {
+        this.output.appendLine(`Mini-SWE-V2 shell "${shellSetting}" was not found or was overridden; the engine will use ${engineConfig.shell}.`)
+      }
+    }
     const child = spawn(binary, ["serve", "--hostname", "127.0.0.1", "--port", String(port), "--log-level", "WARN"], {
       cwd: workspace,
       env: {
@@ -53,6 +74,7 @@ export class OpenCodeServer implements vscode.Disposable {
         OPENCODE_CALLER: "vscode-integrated",
         OPENCODE_SERVER_USERNAME: "opencode",
         OPENCODE_SERVER_PASSWORD: password,
+        ...(configContent === undefined ? {} : { OPENCODE_CONFIG_CONTENT: configContent }),
       },
       windowsHide: true,
       stdio: ["pipe", "pipe", "pipe"],
@@ -148,4 +170,18 @@ async function waitForHealth(
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+/** True when `command` resolves to a file on PATH, honoring PATHEXT on Windows. */
+function onPath(command: string): boolean {
+  const extensions = process.platform === "win32" ? (process.env.PATHEXT ?? ".EXE;.CMD;.BAT").split(";") : [""]
+  for (const directory of (process.env.PATH ?? "").split(path.delimiter)) {
+    if (!directory) continue
+    for (const extension of extensions) {
+      try {
+        if (fs.statSync(path.join(directory, command + extension)).isFile()) return true
+      } catch {}
+    }
+  }
+  return false
 }
